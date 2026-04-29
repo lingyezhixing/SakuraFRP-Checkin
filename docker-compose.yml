@@ -1,0 +1,14 @@
+services:
+  SakuraFRP-Checkin:
+    container_name: SakuraFRP-Checkin
+    image: lingyezhixing/SakuraFRP-Checkin
+    build: .
+    restart: always
+    volumes:
+      - ./:/app
+    networks:
+      - tools-net
+
+networks:
+  tools-net:
+    external: true
