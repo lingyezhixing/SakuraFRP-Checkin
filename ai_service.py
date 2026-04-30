@@ -51,7 +51,8 @@ class AIService:
         except json.JSONDecodeError:
             # 修复不带引号：[猫, 狗, 汽车] → ['猫', '狗', '汽车']
             items = re.findall(r'[^,\[\]\s"\']+', bracket)
-            return items if items else None
+            # 清理残留的中英文引号
+            return [item.strip('"\'“”‘’') for item in items] if items else None
 
     def safe_parse_ints(self, text):
         """解析整数列表"""

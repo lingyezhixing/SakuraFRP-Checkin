@@ -967,26 +967,8 @@ def find_signed_text_locator(page, timeout=3000):
         pass
     return None
 
-def main():
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description='SakuraFRP自动签到脚本')
-    parser.add_argument('--screenshot-only', action='store_true', help='仅记录截图，不记录日志')
-    parser.add_argument('--log-only', action='store_true', help='仅记录日志，不保存截图')
-    parser.add_argument('--both', action='store_true', help='同时记录截图和日志（默认）')
-    args = parser.parse_args()
-    
-    # 确定记录模式
-    if args.screenshot_only:
-        save_screenshot = True
-        save_log = False
-    elif args.log_only:
-        save_screenshot = False
-        save_log = True
-    else:
-        # 默认或--both都是两者都要
-        save_screenshot = True
-        save_log = True
-    
+def run_checkin(save_screenshot, save_log):
+
     # 清理30天前的旧日志
     clean_old_logs(BASE_DIR, days=30)
     
@@ -1377,6 +1359,45 @@ def main():
         
         print("[INFO] 脚本运行结束。")
         browser.close()
+
+def main():
+    parser = argparse.ArgumentParser(description='SakuraFRP自动签到脚本')
+    parser.add_argument('--screenshot-only', action='store_true', help='仅记录截图，不记录日志')
+    parser.add_argument('--log-only', action='store_true', help='仅记录日志，不保存截图')
+    parser.add_argument('--both', action='store_true', help='同时记录截图和日志（默认）')
+    args = parser.parse_args()
+
+    if args.screenshot_only:
+        save_screenshot, save_log = True, False
+    elif args.log_only:
+        save_screenshot, save_log = False, True
+    else:
+        save_screenshot, save_log = True, True
+
+    schedule_time = os.getenv("SCHEDULE_TIME")
+
+    if schedule_time:
+        while True:
+            hour, minute = map(int, schedule_time.split(":"))
+            offset_minutes = random.randint(-30, 30)
+            random_second = random.randint(0, 59)
+            target = datetime.now().replace(hour=hour, minute=minute, second=random_second, microsecond=0)
+            target += timedelta(minutes=offset_minutes)
+            if target <= datetime.now():
+                target += timedelta(days=1)
+
+            wait_seconds = (target - datetime.now()).total_seconds()
+            print(f"[INFO] 下次签到时间: {target.strftime('%Y-%m-%d %H:%M:%S')}，等待 {wait_seconds / 3600:.1f} 小时")
+            time.sleep(wait_seconds)
+
+            print(f"[INFO] 到达预定时间，开始执行签到 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+            try:
+                run_checkin(save_screenshot, save_log)
+            except Exception as e:
+                print(f"[ERROR] 签到过程异常: {e}")
+            print("[INFO] 签到完成，等待下次执行...\n")
+    else:
+        run_checkin(save_screenshot, save_log)
 
 if __name__ == "__main__":
     main()
