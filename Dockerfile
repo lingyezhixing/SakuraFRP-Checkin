@@ -14,4 +14,4 @@ RUN apt-get update && \
 COPY entrypoint.sh run_scheduled.sh generate_random_time.sh run_checkin.sh ./
 RUN chmod +x entrypoint.sh run_scheduled.sh generate_random_time.sh run_checkin.sh
 
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["bash", "./entrypoint.sh"]
