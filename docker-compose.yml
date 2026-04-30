@@ -1,9 +1,11 @@
 services:
   SakuraFRP-Checkin:
     container_name: SakuraFRP-Checkin
-    image: lingyezhixing/SakuraFRP-Checkin
+    image: lingyezhixing/sakurafrp-checkin
     build: .
     restart: always
+    env_file:
+      - .env
     volumes:
       - ./:/app
     networks:
