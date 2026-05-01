@@ -1,5 +1,6 @@
 import io
 import random
+import urllib.request
 
 from PIL import Image
 import pytweening
@@ -156,16 +157,22 @@ def _read_captcha_prompt(page, ai, logger):
 
 def _slice_grid(container, logger):
     try:
-        grid_img = Image.open(io.BytesIO(container.screenshot()))
+        src = container.locator("img.geetest_item_img").first.get_attribute("src")
+        if not src:
+            raise ValueError("未找到图片URL")
+        logger.debug(f"下载原图: {src[:80]}...")
+        data = urllib.request.urlopen(src, timeout=10).read()
+        grid_img = Image.open(io.BytesIO(data))
         w, h = grid_img.size
-        cw, ch = w / 3, h / 3
+        grid_img = grid_img.crop((0, 0, w, w))  # 裁掉底部额外条带
+        cw, ch = w / 3, w / 3
         cells = []
         for r in range(3):
             for c in range(3):
                 buf = io.BytesIO()
                 grid_img.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch)).save(buf, format="PNG")
                 cells.append(buf.getvalue())
-        logger.debug(f"九宫格切分完成: {w}x{h}")
+        logger.debug(f"九宫格切分完成: {w}x{h} (原图下载)")
         return cells
     except Exception as exc:
         logger.error(f"九宫格切分失败: {exc}")
