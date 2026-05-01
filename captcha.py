@@ -109,8 +109,14 @@ def solve_grid_captcha(page, ai: AIService, logger: CheckinLogger):
     if not tip_bytes or not cell_images:
         return False
 
-    # 逐格比较（题目图 vs 格子图）
-    click_indices = _classify_cells(tip_bytes, cell_images, ai, logger)
+    # 阶段1：识别题目
+    target = ai.call_vision(tip_bytes, "What is the object in this image? Reply with the object name only. No explanation, no punctuation.")
+    import re
+    target = re.sub(r'[^\w]', '', target)
+    logger.info(f"识别题目: 【{target}】")
+
+    # 阶段2：逐格二分类
+    click_indices = _classify_cells(cell_images, target, ai, logger)
     logger.info(f"匹配格子: {click_indices or '无'}")
 
     if not click_indices:
@@ -164,10 +170,10 @@ def _download_and_slice(container, logger):
 
 
 
-def _classify_cells(tip_bytes, cell_images, ai, logger):
+def _classify_cells(cell_images, target, ai, logger):
     indices = []
     for i, cell_bytes in enumerate(cell_images):
-        matched = ai.compare_images(tip_bytes, cell_bytes)
+        matched = ai.classify_cell(cell_bytes, target)
         label = "匹配" if matched else "不匹配"
         logger.debug(f"格子 {i + 1} (行{(i // 3) + 1}, 列{(i % 3) + 1}): {label}")
         if matched:

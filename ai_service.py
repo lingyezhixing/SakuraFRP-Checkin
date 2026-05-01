@@ -24,26 +24,27 @@ class AIService:
             }
         }
 
-    def compare_images(self, tip_img_bytes, cell_img_bytes):
-        tip_b64 = base64.b64encode(tip_img_bytes).decode("utf-8")
-        cell_b64 = base64.b64encode(cell_img_bytes).decode("utf-8")
-        prompt = "Determine if these two images show the same or similar object. Answer only: true or false"
+    def call_vision(self, image_bytes, prompt):
+        base64_data = base64.b64encode(image_bytes).decode("utf-8")
         try:
             response = self.client.chat.completions.create(
                 model=self.model_vision,
                 messages=[{
                     "role": "user",
                     "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{tip_b64}"}},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{cell_b64}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_data}"}},
                         {"type": "text", "text": prompt}
                     ]
                 }],
                 **self.vision_params
             )
-            res = response.choices[0].message.content.strip()
-            print(f"[AI] compare: {res}")
-            return "true" in res.lower()
+            return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"[ERROR] AI compare call failed: {e}")
-            return False
+            print(f"[ERROR] AI API call failed: {e}")
+            return ""
+
+    def classify_cell(self, cell_img_bytes, target_object):
+        prompt = f'Is this a {target_object}? Reply with yes or no only. No explanation.'
+        res = self.call_vision(cell_img_bytes, prompt)
+        print(f"[AI] classify target={target_object}: {res}")
+        return "yes" in res.lower()
