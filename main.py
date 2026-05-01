@@ -821,7 +821,7 @@ def find_signed_text_locator(page, timeout=3000):
         pass
     return None
 
-def run_checkin():
+def run_checkin(debug=False):
 
     # 清理30天前的旧日志
     clean_old_logs(BASE_DIR, days=30)
@@ -829,6 +829,13 @@ def run_checkin():
     # 初始化日志记录器
     logger = CheckinLogger(BASE_DIR)
     logger.log_start()
+
+    # debug 模式：创建独立截图目录
+    debug_dir = None
+    if debug:
+        debug_dir = BASE_DIR / "debug" / datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[DEBUG] 调试目录: {debug_dir}")
     
     # 初始化AI服务
     try:
@@ -879,6 +886,8 @@ def run_checkin():
             print(f"[DEBUG] 页面加载完成，当前URL: {current_url}")
             if logger:
                 logger.log_page_url(current_url)
+            if debug_dir:
+                page.screenshot(path=str(debug_dir / "01_page_loaded.png"))
         except Exception as e:
             error_msg = f"页面访问失败: {e}"
             print(f"[ERROR] {error_msg}")
@@ -941,6 +950,8 @@ def run_checkin():
             print("[INFO] 已登录状态")
             if logger:
                 logger.log_login_status(True)
+        if debug_dir:
+            page.screenshot(path=str(debug_dir / "02_after_login.png"))
 
         # 18岁弹窗
         try:
@@ -995,14 +1006,9 @@ def run_checkin():
                     print("[DEBUG] 已点击签到按钮，等待验证码加载...")
                     if logger:
                         logger.log_debug("已点击签到按钮，等待验证码加载")
-                    
-                    # 保存点击前的页面状态（用于对比）
-                    try:
-                        before_screenshot = BASE_DIR / "before_click.png"
-                        page.screenshot(path=str(before_screenshot))
-                        print(f"[DEBUG] 点击前页面截图已保存: {before_screenshot}")
-                    except:
-                        pass
+
+                    if debug_dir:
+                        page.screenshot(path=str(debug_dir / "03_after_click_sign.png"))
                     
                     # 获取点击后的URL
                     current_url = page.url
@@ -1058,15 +1064,10 @@ def run_checkin():
                                     break
                                 else:
                                     print(f"[DEBUG] 第 {check_round + 1} 轮检查：仍未检测到验证码")
-                    
-                    # 保存点击后的页面状态
-                    try:
-                        after_screenshot = BASE_DIR / "after_click.png"
-                        page.screenshot(path=str(after_screenshot))
-                        print(f"[DEBUG] 点击后页面截图已保存: {after_screenshot}")
-                    except:
-                        pass
-                    
+
+                    if debug_dir:
+                        page.screenshot(path=str(debug_dir / "04_captcha_state.png"))
+
                     if sign_success:
                         # 如果已经签到成功，不需要继续处理验证码
                         pass
@@ -1194,34 +1195,42 @@ def run_checkin():
                     except:
                         pass
 
+        if debug_dir:
+            page.screenshot(path=str(debug_dir / "05_final_state.png"))
         print("[INFO] 脚本运行结束。")
         browser.close()
 
 def main():
-    schedule_time = os.getenv("SCHEDULE_TIME")
+    args = set(sys.argv[1:])
+    debug = "--debug" in args
+    run_now = "--now" in args
 
-    if schedule_time:
-        while True:
-            hour, minute = map(int, schedule_time.split(":"))
-            offset_minutes = random.randint(-30, 30)
-            random_second = random.randint(0, 59)
-            target = datetime.now().replace(hour=hour, minute=minute, second=random_second, microsecond=0)
-            target += timedelta(minutes=offset_minutes)
-            if target <= datetime.now():
-                target += timedelta(days=1)
-
-            wait_seconds = (target - datetime.now()).total_seconds()
-            print(f"[INFO] 下次签到时间: {target.strftime('%Y-%m-%d %H:%M:%S')}，等待 {wait_seconds / 3600:.1f} 小时")
-            time.sleep(wait_seconds)
-
-            print(f"[INFO] 到达预定时间，开始执行签到 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
-            try:
-                run_checkin()
-            except Exception as e:
-                print(f"[ERROR] 签到过程异常: {e}")
-            print("[INFO] 签到完成，等待下次执行...\n")
+    if run_now or debug:
+        run_checkin(debug=debug)
     else:
-        run_checkin()
+        schedule_time = os.getenv("SCHEDULE_TIME")
+        if schedule_time:
+            while True:
+                hour, minute = map(int, schedule_time.split(":"))
+                offset_minutes = random.randint(-30, 30)
+                random_second = random.randint(0, 59)
+                target = datetime.now().replace(hour=hour, minute=minute, second=random_second, microsecond=0)
+                target += timedelta(minutes=offset_minutes)
+                if target <= datetime.now():
+                    target += timedelta(days=1)
+
+                wait_seconds = (target - datetime.now()).total_seconds()
+                print(f"[INFO] 下次签到时间: {target.strftime('%Y-%m-%d %H:%M:%S')}，等待 {wait_seconds / 3600:.1f} 小时")
+                time.sleep(wait_seconds)
+
+                print(f"[INFO] 到达预定时间，开始执行签到 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+                try:
+                    run_checkin()
+                except Exception as e:
+                    print(f"[ERROR] 签到过程异常: {e}")
+                print("[INFO] 签到完成，等待下次执行...\n")
+        else:
+            run_checkin()
 
 if __name__ == "__main__":
     main()
