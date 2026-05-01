@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     playwright install chromium && \
     rm -rf /var/lib/apt/lists/*
 
-CMD ["python", "main.py", "--log-only"]
+CMD ["python", "main.py"]
