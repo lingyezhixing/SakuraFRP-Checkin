@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 
 from ai_service import AIService
 from logger import CheckinLogger, clean_old_logs
-from captcha import detect_captcha_type, solve_grid_captcha, solve_slider_captcha
+from captcha import detect_captcha_type, solve_grid_captcha, solve_slider_captcha, _is_visible
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -66,13 +66,6 @@ def login(page, username: str, password: str, logger: CheckinLogger):
         return True
     except Exception as exc:
         logger.error(f"登录失败: {exc}")
-        return False
-
-
-def _is_visible(locator, timeout=2000):
-    try:
-        return locator.is_visible(timeout=timeout)
-    except Exception:
         return False
 
 

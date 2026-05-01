@@ -1,5 +1,6 @@
 import io
 import random
+import time
 import urllib.request
 
 from PIL import Image
@@ -103,17 +104,13 @@ def solve_grid_captcha(page, ai: AIService, logger: CheckinLogger):
         logger.debug("验证码容器不可见")
         return False
 
-    # 识别题目
-    target = _read_captcha_prompt(page, ai, logger)
-    logger.info(f"识别题目: 【{target}】")
-
-    # 切分九宫格
-    cell_images = _slice_grid(container, logger)
-    if not cell_images:
+    # 一次下载，裁出题目图和九宫格
+    tip_bytes, cell_images = _download_and_slice(container, logger)
+    if not tip_bytes or not cell_images:
         return False
 
-    # 逐格分类
-    click_indices = _classify_cells(cell_images, target, ai, logger)
+    # 逐格比较（题目图 vs 格子图）
+    click_indices = _classify_cells(tip_bytes, cell_images, ai, logger)
     logger.info(f"匹配格子: {click_indices or '无'}")
 
     if not click_indices:
@@ -134,57 +131,43 @@ def solve_grid_captcha(page, ai: AIService, logger: CheckinLogger):
     return False
 
 
-def _read_captcha_prompt(page, ai, logger):
-    tip_img = page.locator(".geetest_tip_img").first
-    if _is_visible(tip_img, 2000):
-        try:
-            result = ai.call_vision(tip_img.screenshot(), "图中是什么物体？只回答物体名称，不要带标点。")
-            logger.debug(f"AI 识别图片提示: {result}")
-            return result
-        except Exception as exc:
-            logger.error(f"AI 识别图片提示失败: {exc}")
-
-    tip_text = page.locator(".geetest_tip_content").first
-    if _is_visible(tip_text, 2000):
-        try:
-            return tip_text.inner_text()
-        except Exception as exc:
-            logger.error(f"读取文本提示失败: {exc}")
-
-    logger.debug("未找到题目提示")
-    return ""
-
-
-def _slice_grid(container, logger):
+def _download_and_slice(container, logger):
     try:
         src = container.locator("img.geetest_item_img").first.get_attribute("src")
         if not src:
             raise ValueError("未找到图片URL")
         logger.debug(f"下载原图: {src[:80]}...")
         data = urllib.request.urlopen(src, timeout=10).read()
-        grid_img = Image.open(io.BytesIO(data))
-        w, h = grid_img.size
-        grid_img = grid_img.crop((0, 0, w, w))  # 裁掉底部额外条带
-        cw, ch = w / 3, w / 3
+        full_img = Image.open(io.BytesIO(data))
+        w, h = full_img.size
+
+        # 题目图：底部条带左侧 ~1/3（右侧纯黑）
+        tip_w = round(w / 3)
+        tip_buf = io.BytesIO()
+        full_img.crop((0, w, tip_w, h)).save(tip_buf, format="PNG")
+        tip_bytes = tip_buf.getvalue()
+
+        # 九宫格：顶部正方形 (0, 0) → (w, w)
+        cw = w / 3
         cells = []
         for r in range(3):
             for c in range(3):
                 buf = io.BytesIO()
-                grid_img.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch)).save(buf, format="PNG")
+                full_img.crop((c * cw, r * cw, (c + 1) * cw, (r + 1) * cw)).save(buf, format="PNG")
                 cells.append(buf.getvalue())
-        logger.debug(f"九宫格切分完成: {w}x{h} (原图下载)")
-        return cells
+
+        logger.debug(f"图片切分完成: {w}x{h}, 题目 {tip_w}x{h-w}")
+        return tip_bytes, cells
     except Exception as exc:
-        logger.error(f"九宫格切分失败: {exc}")
-        return []
+        logger.error(f"图片下载切分失败: {exc}")
+        return None, []
 
 
-def _classify_cells(cell_images, target, ai, logger):
-    import re
-    target = re.sub(r'[^\w]', '', target)
+
+def _classify_cells(tip_bytes, cell_images, ai, logger):
     indices = []
-    for i, img_bytes in enumerate(cell_images):
-        matched = ai.classify_cell(img_bytes, target)
+    for i, cell_bytes in enumerate(cell_images):
+        matched = ai.compare_images(tip_bytes, cell_bytes)
         label = "匹配" if matched else "不匹配"
         logger.debug(f"格子 {i + 1} (行{(i // 3) + 1}, 列{(i % 3) + 1}): {label}")
         if matched:
@@ -204,7 +187,6 @@ def _click_cells(page, container, indices, logger):
         y = box["y"] + r * ch + ch / 2
         logger.debug(f"点击格子 {idx} (行{r + 1}, 列{c + 1})")
         page.mouse.click(x, y)
-        import time
         time.sleep(random.uniform(0.3, 0.5))
 
 
@@ -214,7 +196,6 @@ def _refresh_captcha(page, logger):
         btn = page.locator(".geetest_refresh").first
         if _is_visible(btn):
             btn.click()
-            import time
             time.sleep(2)
     except Exception:
         pass
@@ -337,8 +318,6 @@ def _calc_drag_distance(page, gap, btn_initial_x, logger):
 
 
 def _drag_slider(page, start_x, start_y, distance, target_x, logger):
-    import time
-
     page.mouse.move(start_x, start_y)
     time.sleep(random.uniform(0.1, 0.2))
     page.mouse.down()
