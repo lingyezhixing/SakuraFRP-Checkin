@@ -114,79 +114,13 @@ def identify_gap_with_library(bg_img_bytes, logger=None):
         return 0
     except Exception as e:
         print(f"[ERROR] captcha-recognizer 识别异常: {e}")
-        import traceback
         traceback.print_exc()
-        return 0
-
-def identify_gap_local(bg_img_bytes):
-    """备用方案：使用简单的边缘检测识别缺口位置"""
-    try:
-        import numpy as np
-        from PIL import Image
-        
-        # 读取背景图
-        bg_img = Image.open(io.BytesIO(bg_img_bytes))
-        bg_arr = np.array(bg_img.convert('RGB'))
-        
-        # 转换为灰度图
-        if len(bg_arr.shape) == 3:
-            gray = np.mean(bg_arr, axis=2).astype(np.uint8)
-        else:
-            gray = bg_arr
-        
-        height, width = gray.shape
-        
-        # 计算每列的边缘强度
-        edge_strength = np.zeros(width)
-        for x in range(1, width - 1):
-            gradient = np.abs(gray[:, x+1].astype(int) - gray[:, x-1].astype(int))
-            edge_strength[x] = np.sum(gradient)
-        
-        # 找到边缘强度最大的位置
-        margin = width // 10
-        search_range = edge_strength[margin:width-margin]
-        if len(search_range) > 0:
-            max_idx = np.argmax(search_range) + margin
-            print(f"[DEBUG] 简单边缘检测找到位置: {max_idx}px")
-            return max_idx
-        
-        # 默认返回中间偏右位置
-        return int(width * 0.6)
-        
-    except Exception as e:
-        print(f"[ERROR] 简单边缘检测异常: {e}")
         return 0
 
 # ---------------- 验证码类型检测 ----------------
 def detect_captcha_type(page, logger=None):
     """检测验证码类型：九宫格或滑块"""
-    # 先检查是否有验证码弹窗出现
-    captcha_popup_visible = False
-    try:
-        # 检查多种可能的验证码弹窗选择器
-        popup_selectors = [
-            ".geetest_popup",
-            ".geetest_wrap",
-            ".geetest_panel",
-            "[class*='geetest'][class*='popup']",
-            "[class*='geetest'][class*='wrap']"
-        ]
-        for selector in popup_selectors:
-            try:
-                if page.locator(selector).is_visible(timeout=500):
-                    captcha_popup_visible = True
-                    print(f"[DEBUG] 检测到验证码弹窗: {selector}")
-                    break
-            except:
-                continue
-    except:
-        pass
-    
-    if not captcha_popup_visible:
-        # 不打印，避免日志过多
-        pass
-    
-    # 检查九宫格验证码（增加超时时间）
+    # 检查九宫格验证码
     grid_visible = False
     grid_selectors = [
         ".geetest_table_box",
@@ -341,65 +275,65 @@ def solve_geetest_multistep(page, ai_service, logger=None):
     if logger:
         logger.log_captcha_step("步骤1完成", f"识别题目: {target_object}")
 
-    # 步骤 2-4: 逐行抠图识别
-    print("[DEBUG] 开始逐行识别九宫格...")
+    # 步骤 2: 切分九宫格为 9 张独立图片
+    print("[DEBUG] 开始切分九宫格...")
     if logger:
-        logger.log_captcha_step("步骤2-4", "开始逐行识别九宫格")
-    
-    all_descriptions = []
+        logger.log_captcha_step("步骤2", "开始切分九宫格")
+
+    cell_images = []
     try:
-        # 获取整个九宫格的截图并在内存中处理
         grid_bytes = img_container.screenshot()
         grid_img = Image.open(io.BytesIO(grid_bytes))
         w, h = grid_img.size
-        row_h = h / 3
-        print(f"[DEBUG] 九宫格尺寸: {w}x{h}, 每行高度: {row_h}")
+        cell_w, cell_h = w / 3, h / 3
+        print(f"[DEBUG] 九宫格尺寸: {w}x{h}, 单格尺寸: {cell_w:.0f}x{cell_h:.0f}")
         if logger:
-            logger.log_captcha_step("步骤2-4", f"九宫格尺寸: {w}x{h}")
-        
-        for i in range(3):
-            print(f"[DEBUG] 正在识别第 {i+1} 行...")
-            if logger:
-                logger.log_captcha_step(f"步骤{i+2}", f"识别第 {i+1} 行")
-            
-            # 裁剪出每一行
-            top = i * row_h
-            bottom = (i + 1) * row_h
-            row_crop = grid_img.crop((0, top, w, bottom))
-            
-            buf = io.BytesIO()
-            row_crop.save(buf, format='PNG')
-            row_res = ai_service.identify_captcha_row(buf.getvalue(), i+1)
-            print(f"[DEBUG] 第 {i+1} 行识别结果: {row_res}")
-            if logger:
-                logger.log_captcha_step(f"步骤{i+2}完成", f"第 {i+1} 行: {row_res}")
-            all_descriptions.extend(row_res)
+            logger.log_captcha_step("步骤2", f"九宫格尺寸: {w}x{h}")
+
+        for row in range(3):
+            for col in range(3):
+                left = col * cell_w
+                top = row * cell_h
+                cell = grid_img.crop((left, top, left + cell_w, top + cell_h))
+                buf = io.BytesIO()
+                cell.save(buf, format='PNG')
+                cell_images.append(buf.getvalue())
     except Exception as e:
-        print(f"[ERROR] 九宫格识别过程出错: {e}")
+        print(f"[ERROR] 九宫格切分出错: {e}")
         if logger:
             logger.log_exception(type(e).__name__, str(e), traceback.format_exc())
         return False
 
-    # 步骤 5: 语义匹配并模拟点击
-    print(f"[DEBUG] 开始语义匹配，目标: {target_object}, 描述列表: {all_descriptions}")
+    # 步骤 3: 逐格二分类判断
+    print(f"[DEBUG] 开始逐格判断，目标: {target_object}")
     if logger:
-        logger.log_captcha_step("步骤5", f"语义匹配 - 目标: {target_object}")
-    
+        logger.log_captcha_step("步骤3", f"逐格判断 - 目标: {target_object}")
+
+    click_indices = []
     try:
-        click_indices = ai_service.semantic_match(target_object, all_descriptions)
-        print(f">>> [Final] 最终决定点击序号: {click_indices}")
-        if logger:
-            logger.log_captcha_step("步骤5完成", f"匹配结果: {click_indices}")
+        for idx, cell_bytes in enumerate(cell_images):
+            cell_num = idx + 1
+            is_match = ai_service.classify_cell(cell_bytes, target_object)
+            label = "匹配" if is_match else "不匹配"
+            print(f"[DEBUG] 格子 {cell_num} (行{(idx//3)+1}, 列{(idx%3)+1}): {label}")
+            if logger:
+                logger.log_captcha_step("步骤3", f"格子 {cell_num}: {label}")
+            if is_match:
+                click_indices.append(cell_num)
     except Exception as e:
-        print(f"[ERROR] 语义匹配失败: {e}")
+        print(f"[ERROR] 逐格判断出错: {e}")
         if logger:
             logger.log_exception(type(e).__name__, str(e), traceback.format_exc())
         return False
-    
+
+    print(f">>> [Final] 匹配格子: {click_indices}")
+    if logger:
+        logger.log_captcha_step("步骤3完成", f"匹配格子: {click_indices}")
+
     if not click_indices:
         print("[INFO] 未找到匹配项，刷新验证码...")
         if logger:
-            logger.log_captcha_step("步骤5", "未找到匹配项，刷新验证码")
+            logger.log_captcha_step("步骤3", "未找到匹配项，刷新验证码")
         try:
             refresh_btn = page.locator(".geetest_refresh").first
             if refresh_btn.is_visible():
@@ -487,7 +421,6 @@ def solve_geetest_slider(page, ai_service, logger=None):
     
     # 查找滑块相关元素
     slider_button = None
-    slider_track = None
     
     # 尝试多种选择器找到滑块按钮
     slider_selectors = [
@@ -527,26 +460,7 @@ def solve_geetest_slider(page, ai_service, logger=None):
     print(f"[DEBUG] 滑块按钮初始x坐标: {button_initial_x:.1f}")
     if logger:
         logger.log_debug(f"滑块按钮初始x坐标: {button_initial_x:.1f}")
-    
-    # 查找滑块轨道
-    track_selectors = [
-        ".geetest_slider_track",
-        ".geetest_slider",
-        "[class*='slider'][class*='track']"
-    ]
-    
-    for selector in track_selectors:
-        try:
-            track = page.locator(selector).first
-            if track.is_visible(timeout=1000):
-                slider_track = track
-                print(f"[DEBUG] 找到滑块轨道: {selector}")
-                if logger:
-                    logger.log_element_status("滑块轨道", True, f"选择器: {selector}")
-                break
-        except:
-            continue
-    
+
     # 获取验证码图片
     print("[DEBUG] 正在获取验证码图片...")
     if logger:
@@ -570,48 +484,34 @@ def solve_geetest_slider(page, ai_service, logger=None):
     
     # 尝试获取背景图和缺口图
     bg_img_bytes = None
-    slice_img_bytes = None
-    
+
     # 方法1: 从canvas获取
     canvas_selectors = [
         ".geetest_canvas_bg",
-        ".geetest_canvas_slice",
-        "canvas.geetest_canvas_bg",
-        "canvas.geetest_canvas_slice"
+        "canvas.geetest_canvas_bg"
     ]
-    
+
     bg_canvas = None
-    slice_canvas = None
-    
+
     for selector in canvas_selectors:
         try:
             canvas = page.locator(selector).first
             if canvas.is_visible(timeout=1000):
+                bg_canvas = canvas
                 try:
                     box = canvas.bounding_box()
                     size_info = f"位置: ({box['x']:.0f}, {box['y']:.0f}), 尺寸: {box['width']:.0f}x{box['height']:.0f}" if box else "无法获取位置"
-                    if "bg" in selector or "background" in selector.lower():
-                        bg_canvas = canvas
-                        print(f"[DEBUG] 找到背景canvas: {selector}, {size_info}")
-                    elif "slice" in selector or "puzzle" in selector.lower():
-                        slice_canvas = canvas
-                        print(f"[DEBUG] 找到缺口canvas: {selector}, {size_info}")
+                    print(f"[DEBUG] 找到背景canvas: {selector}, {size_info}")
                 except:
-                    if "bg" in selector or "background" in selector.lower():
-                        bg_canvas = canvas
-                        print(f"[DEBUG] 找到背景canvas: {selector}")
-                    elif "slice" in selector or "puzzle" in selector.lower():
-                        slice_canvas = canvas
-                        print(f"[DEBUG] 找到缺口canvas: {selector}")
+                    print(f"[DEBUG] 找到背景canvas: {selector}")
+                break
         except:
             continue
-    
-    # 如果找到canvas，截图
+
     if bg_canvas:
         try:
             bg_img_bytes = bg_canvas.screenshot()
             print("[DEBUG] 成功获取背景图")
-            # 保存背景图到文件
             bg_img_path = BASE_DIR / "captcha_bg.png"
             with open(bg_img_path, "wb") as f:
                 f.write(bg_img_bytes)
@@ -622,23 +522,7 @@ def solve_geetest_slider(page, ai_service, logger=None):
             print(f"[ERROR] 获取背景图失败: {e}")
             if logger:
                 logger.log_exception(type(e).__name__, str(e), traceback.format_exc())
-    
-    if slice_canvas:
-        try:
-            slice_img_bytes = slice_canvas.screenshot()
-            print("[DEBUG] 成功获取缺口图")
-            # 保存缺口图到文件
-            slice_img_path = BASE_DIR / "captcha_slice.png"
-            with open(slice_img_path, "wb") as f:
-                f.write(slice_img_bytes)
-            print(f"[DEBUG] 缺口图已保存到: {slice_img_path}")
-            if logger:
-                logger.log_captcha_step("步骤1", f"成功获取缺口图，已保存到: {slice_img_path}")
-        except Exception as e:
-            print(f"[ERROR] 获取缺口图失败: {e}")
-            if logger:
-                logger.log_exception(type(e).__name__, str(e), traceback.format_exc())
-    
+
     # 方法2: 如果canvas不可用，尝试从img标签获取
     if not bg_img_bytes:
         img_selectors = [
@@ -683,33 +567,7 @@ def solve_geetest_slider(page, ai_service, logger=None):
             if logger:
                 logger.log_exception(type(e).__name__, str(e), traceback.format_exc())
             return False
-    
-    # 查找缺口块元素（拼图块）
-    slice_element = None
-    slice_element_selectors = [
-        ".geetest_slice",
-        ".geetest_slice_box",
-        "[class*='slice']",
-        "[class*='puzzle']"
-    ]
-    
-    for selector in slice_element_selectors:
-        try:
-            elem = page.locator(selector).first
-            if elem.is_visible(timeout=1000):
-                slice_element = elem
-                try:
-                    box = elem.bounding_box()
-                    if box:
-                        print(f"[DEBUG] 找到缺口块元素: {selector}, 位置: ({box['x']:.0f}, {box['y']:.0f}), 尺寸: {box['width']:.0f}x{box['height']:.0f}")
-                        if logger:
-                            logger.log_element_status("缺口块元素", True, f"位置: ({box['x']:.0f}, {box['y']:.0f})")
-                except:
-                    print(f"[DEBUG] 找到缺口块元素: {selector}")
-                break
-        except:
-            continue
-    
+
     # 额外保存整个页面的验证码区域截图（用于调试）
     try:
         full_captcha_path = BASE_DIR / "captcha_full.png"
@@ -774,9 +632,8 @@ def solve_geetest_slider(page, ai_service, logger=None):
     
     button_x = button_box['x'] + button_box['width'] / 2
     button_y = button_box['y'] + button_box['height'] / 2
-    button_width = button_box['width']
     
-    print(f"[DEBUG] 滑块按钮: 左边缘x={button_box['x']:.1f}, 中心x={button_x:.1f}, 宽度={button_width:.1f}")
+    print(f"[DEBUG] 滑块按钮: 左边缘x={button_box['x']:.1f}, 中心x={button_x:.1f}, 宽度={button_box['width']:.1f}")
     if logger:
         logger.log_captcha_step("步骤3", f"滑块按钮中心: ({button_x:.1f}, {button_y:.1f})")
     
@@ -1041,7 +898,6 @@ def run_checkin(save_screenshot, save_log):
         if logger:
             logger.log_page_url(current_url_after_load)
         
-        is_logged_in = True
         username_input_visible = False
         try:
             username_input_visible = page.locator("#username").is_visible(timeout=2000)
@@ -1049,7 +905,6 @@ def run_checkin(save_screenshot, save_log):
             pass
         
         if "login" in current_url_after_load or username_input_visible:
-            is_logged_in = False
             print("[INFO] 检测到需要登录")
             print(f"[DEBUG] URL包含'login': {'login' in current_url_after_load}, 用户名输入框可见: {username_input_visible}")
             if logger:
@@ -1070,7 +925,6 @@ def run_checkin(save_screenshot, save_log):
                 try:
                     page.wait_for_selector("text=账号信息", timeout=10000)
                     context.storage_state(path=STATE_FILE)
-                    is_logged_in = True
                     print("[SUCCESS] 登录成功")
                     if logger:
                         logger.log_login_status(True)
