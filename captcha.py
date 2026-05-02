@@ -110,7 +110,7 @@ def solve_grid_captcha(page, ai: AIService, logger: CheckinLogger):
         return False
 
     # 阶段1：识别题目
-    target = ai.call_vision(tip_bytes, "What is the object in this image? Reply with the object name only. No explanation, no punctuation.")
+    target = ai.call_vision(tip_bytes, "图片中是什么物体？不要解释，直接回答物体名称")
     import re
     target = re.sub(r'[^\w]', '', target)
     logger.info(f"识别题目: 【{target}】")

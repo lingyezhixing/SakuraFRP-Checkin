@@ -21,6 +21,7 @@ class AIService:
             "temperature": 0.7, "top_p": 0.8, "extra_body": {
                 "top_k": 20, "min_p": 0.0,
                 "presence_penalty": 1.5, "repetition_penalty": 1.0,
+                "chat_template_kwargs": {"enable_thinking": False},
             }
         }
 
@@ -44,7 +45,7 @@ class AIService:
             return ""
 
     def classify_cell(self, cell_img_bytes, target_object):
-        prompt = f'Is this a {target_object}? Reply with yes or no only. No explanation.'
+        prompt = f'图片中是否有【{target_object}】？只回答：是 或 否'
         res = self.call_vision(cell_img_bytes, prompt)
         print(f"[AI] classify target={target_object}: {res}")
-        return "yes" in res.lower()
+        return "是" in res
