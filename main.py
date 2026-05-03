@@ -239,10 +239,14 @@ def _try_solve_captcha_loop(page, ai, logger, attempts):
                 ok = solve_slider_captcha(page, ai, BASE_DIR, logger)
 
             logger.info(f"验证码处理: {'成功' if ok else '失败'}")
-            if ok:
-                time.sleep(3)
         except Exception as exc:
             logger.exception(exc, traceback.format_exc())
+            ok = False
+
+        if ok:
+            # 验证码已提交，等待签到结果
+            if find_signed_text(page, timeout=5000):
+                return True
 
     return False
 
