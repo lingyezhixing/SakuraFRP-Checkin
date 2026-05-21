@@ -11,7 +11,7 @@ class AIService:
     def __init__(self):
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.base_url = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-        self.model_vision = os.getenv("LLM_MODEL_VISION", "Qwen3.5-2B")
+        self.model_vision = os.getenv("LLM_MODEL_VISION", "MiniCPM-V-4.6")
 
         if not self.api_key:
             raise ValueError("LLM_API_KEY not found")
