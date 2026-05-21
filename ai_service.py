@@ -39,7 +39,9 @@ class AIService:
                 }],
                 **self.vision_params
             )
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content.strip()
+            print(f"[AI] raw vision response: {content}")
+            return content
         except Exception as e:
             print(f"[ERROR] AI API call failed: {e}")
             return ""
