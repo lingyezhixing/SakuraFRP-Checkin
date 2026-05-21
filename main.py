@@ -153,12 +153,10 @@ def _launch_browser(p):
 
 
 def _do_checkin(page, ai, logger, debug_dir):
-    # 已签到？
     if find_signed_text(page):
         logger.success("今日已签到")
         return
 
-    # 找签到按钮
     sign_btn = page.get_by_text("点击这里签到")
     if not _is_visible(sign_btn, timeout=3000):
         logger.error("未找到签到按钮")
@@ -169,80 +167,61 @@ def _do_checkin(page, ai, logger, debug_dir):
     if debug_dir:
         page.screenshot(path=str(debug_dir / "03_after_click_sign.png"))
 
-    # 等待签到完成或验证码出现
-    sign_success = _wait_and_handle_captcha(page, ai, logger, debug_dir)
-
-    if sign_success:
-        logger.success("签到完成")
-    else:
-        logger.error("签到失败：验证码处理失败或超时")
-
-
-def _wait_and_handle_captcha(page, ai, logger, debug_dir):
-    # 第一阶段：轮询等待签到完成或验证码出现（最多30秒）
-    captcha_appeared = False
-    sign_success = False
-
-    # 前15秒：每0.5秒检查一次
-    for i in range(30):
-        time.sleep(0.5)
-        if find_signed_text(page, timeout=500):
-            logger.success("签到完成（无需验证码）")
-            return True
-
-    # 验证码检测
-    captcha_type = detect_captcha_type(page, logger)
-    if captcha_type != "unknown":
-        captcha_appeared = True
-        logger.info(f"验证码已出现: {captcha_type}")
-    else:
-        # 继续等15秒，每5秒检查一次
-        for rnd in range(3):
-            time.sleep(5)
-            if find_signed_text(page, timeout=500):
-                logger.success("签到完成（无需验证码）")
-                return True
-            captcha_type = detect_captcha_type(page, logger)
-            if captcha_type != "unknown":
-                captcha_appeared = True
-                logger.info(f"验证码已出现: {captcha_type}")
-                break
+    if _wait_sign_success(page, timeout=15):
+        logger.success("签到完成（无需验证码）")
+        return
 
     if debug_dir:
         page.screenshot(path=str(debug_dir / "04_captcha_state.png"))
 
-    if not captcha_appeared:
-        logger.error("30秒内未检测到验证码")
-        # 最后给2次机会
-        return _try_solve_captcha_loop(page, ai, logger, attempts=2)
-
-    return _try_solve_captcha_loop(page, ai, logger, attempts=3)
+    if not _handle_captcha(page, ai, logger):
+        logger.error("签到失败：验证码处理失败或超时")
 
 
-def _try_solve_captcha_loop(page, ai, logger, attempts):
-    for attempt in range(1, attempts + 1):
-        logger.debug(f"第 {attempt}/{attempts} 次检查")
+def _wait_sign_success(page, timeout=15):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if find_signed_text(page, timeout=500):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _handle_captcha(page, ai, logger, max_attempts=5):
+    for attempt in range(1, max_attempts + 1):
+        logger.info(f"── 第 {attempt}/{max_attempts} 轮 ──")
 
         if find_signed_text(page, timeout=1000):
+            logger.success("签到确认完成")
             return True
 
         captcha_type = detect_captcha_type(page, logger)
         if captcha_type == "unknown":
-            if attempt < attempts:
-                time.sleep(2)
+            logger.debug("未检测到验证码")
+            if attempt < max_attempts:
+                time.sleep(5)
             continue
+        logger.info(f"检测到验证码: {captcha_type}")
 
         try:
             if captcha_type == "grid":
-                ok = solve_grid_captcha(page, ai, logger)
+                solved = solve_grid_captcha(page, ai, logger)
             else:
-                ok = solve_slider_captcha(page, ai, BASE_DIR, logger)
-
-            logger.info(f"验证码处理: {'成功' if ok else '失败'}")
-            if ok:
-                time.sleep(3)
+                solved = solve_slider_captcha(page, ai, BASE_DIR, logger)
         except Exception as exc:
             logger.exception(exc, traceback.format_exc())
+            solved = False
+
+        if not solved:
+            logger.error("验证码求解失败")
+            continue
+        logger.success("验证码求解成功")
+
+        time.sleep(3)
+        if find_signed_text(page, timeout=3000):
+            logger.success("签到确认完成")
+            return True
+        logger.error("验证码已求解，但签到未确认")
 
     return False
 
