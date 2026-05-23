@@ -1,20 +1,14 @@
 import base64
 import os
-from dotenv import load_dotenv
 from openai import OpenAI
-
-load_dotenv()
 
 
 class AIService:
 
     def __init__(self):
-        self.api_key = os.getenv("LLM_API_KEY", "")
-        self.base_url = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-        self.model_vision = os.getenv("LLM_MODEL_VISION", "MiniCPM-V-4.6")
-
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY not found")
+        self.api_key = os.getenv("LLM_API_KEY")
+        self.base_url = os.getenv("LLM_BASE_URL")
+        self.model = os.getenv("LLM_MODEL")
 
         self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
         self.vision_params = {
@@ -29,7 +23,7 @@ class AIService:
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         try:
             response = self.client.chat.completions.create(
-                model=self.model_vision,
+                model=self.model,
                 messages=[{
                     "role": "user",
                     "content": [

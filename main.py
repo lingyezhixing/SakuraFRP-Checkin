@@ -6,6 +6,7 @@ import traceback
 from pathlib import Path
 from datetime import datetime, timedelta
 
+from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
 from ai_service import AIService
@@ -228,7 +229,22 @@ def _handle_captcha(page, ai, logger, max_attempts=5):
 
 # ── 入口 ────────────────────────────────────────────────────
 
+_REQUIRED_ENV = ["LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"]
+
+
+def validate_env():
+    load_dotenv()
+    missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
+    if missing:
+        print(f"[ERR] 缺少必要的环境变量: {', '.join(missing)}，请检查 .env 文件")
+        return False
+    return True
+
+
 def main():
+    if not validate_env():
+        return
+
     args = set(sys.argv[1:])
     debug = "--debug" in args
     run_now = "--now" in args

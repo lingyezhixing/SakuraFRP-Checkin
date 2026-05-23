@@ -47,8 +47,9 @@ playwright install chromium
 ```env
 # LLM API（OpenAI 兼容接口）
 LLM_BASE_URL=http://127.0.0.1:8080/v1
+# 本地模型可填任意非空值，如 skip
 LLM_API_KEY=your_api_key_here
-LLM_MODEL_VISION=MiniCPM-V-4.6
+LLM_MODEL=MiniCPM-V-4.6
 
 # 定时执行（格式 HH:MM，设置后每天在 ±30 分钟随机执行）
 SCHEDULE_TIME=08:00
@@ -66,8 +67,8 @@ HTTP_PROXY=
 # 立即执行一次
 python main.py --now
 
-# 立即执行 + 调试截图（保存到 debug/ 目录）
-python main.py --debug --now
+# 调试模式（立即执行 + 截图保存到 debug/ 目录）
+python main.py --debug
 
 # 使用 SCHEDULE_TIME 环境变量定时循环执行
 python main.py

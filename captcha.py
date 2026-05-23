@@ -210,8 +210,6 @@ def _refresh_captcha(page, logger):
 # ── 滑块验证码 ──────────────────────────────────────────────
 
 def solve_slider_captcha(page, ai, base_dir, logger: CheckinLogger):
-    import time
-
     logger.info("开始处理滑块验证码...")
 
     # 找到滑块按钮
