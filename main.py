@@ -248,6 +248,11 @@ def main():
                 if target <= datetime.now():
                     target += timedelta(days=1)
 
+                # 如果今天已有日志文件，强制推到次日
+                today_log = BASE_DIR / "logs" / f"checkin_{datetime.now():%Y-%m-%d}.log"
+                if today_log.exists() and target.date() == datetime.now().date():
+                    target += timedelta(days=1)
+
                 wait = (target - datetime.now()).total_seconds()
                 print(f"[INF] 下次签到: {target:%Y-%m-%d %H:%M:%S}，等待 {wait / 3600:.1f} 小时")
                 time.sleep(wait)
